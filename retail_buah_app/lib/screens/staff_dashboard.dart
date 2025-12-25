@@ -18,9 +18,8 @@ class _StaffDashboardState extends State<StaffDashboard> {
   List<dynamic> transactionHistory = [];
   String searchQuery = '';
 
-  // Tetap menggunakan URL Vercel sesuai permintaan Anda
   String get baseUrl => 'https://vercel-fix-self.vercel.app/api';
-String get storageUrl => 'https://vercel-fix-self.vercel.app/uploads';
+
   @override
   void initState() {
     super.initState();
@@ -30,48 +29,34 @@ String get storageUrl => 'https://vercel-fix-self.vercel.app/uploads';
   Future<void> _fetchTransactionHistory() async {
     try {
       final response = await dio.get('$baseUrl/transactions');
-      setState(() => transactionHistory = response.data ?? []);
+      if (mounted) setState(() => transactionHistory = response.data ?? []);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gagal memuat riwayat transaksi')),
-        );
-      }
+      if (mounted) _showSnackBar('Gagal memuat riwayat', Colors.red);
     }
   }
 
   void _addToCart(dynamic product) {
-    // Pastikan menggunakan 'id' (sesuai Supabase) bukan '_id' (MongoDB)
     final productId = product['id'] ?? product['_id'];
     final existingItemIndex = cartItems.indexWhere((item) => (item['id'] ?? item['_id']) == productId);
-    final quantity = product['quantity'] ?? 1;
+    final int quantity = product['quantity'] ?? 1;
 
     setState(() {
       if (existingItemIndex != -1) {
-        cartItems[existingItemIndex]['quantity'] =
-            (cartItems[existingItemIndex]['quantity'] ?? 1) + quantity;
+        cartItems[existingItemIndex]['quantity'] += quantity;
       } else {
-        // Simpan dengan key 'id' agar konsisten
         cartItems.add({
           ...product,
-          'id': productId, 
+          'id': productId,
           'quantity': quantity
         });
       }
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${product['nama']} x$quantity ditambah ke keranjang'),
-        duration: const Duration(seconds: 1),
-      ),
-    );
+    _showSnackBar('${product['nama']} ditambah', Colors.cyan);
   }
 
   Future<void> _checkout() async {
     if (cartItems.isEmpty) return;
 
-    // Menampilkan loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -81,227 +66,180 @@ String get storageUrl => 'https://vercel-fix-self.vercel.app/uploads';
     try {
       for (var item in cartItems) {
         final productId = item['id'] ?? item['_id'];
-        final hargaProduk = item['harga'] ?? 0;
+        final harga = item['harga'] ?? 0;
         final qty = item['quantity'] ?? 1;
 
-        // 1. Buat transaksi (Mengirim field ganda untuk kompatibilitas backend lama & baru)
         await dio.post('$baseUrl/transactions', data: {
-          'product_id': productId,      // Format SQL
-          'productId': productId,       // Format Mongo (cadangan)
-          'product_name': item['nama'], // Format SQL
-          'namaBuah': item['nama'],     // Format Mongo (cadangan)
-          'quantity': qty,              // Format SQL
-          'jumlah': qty,                // Format Mongo (cadangan)
-          'price': hargaProduk,
-          'total_price': hargaProduk * qty,
-          'totalHarga': hargaProduk * qty,
+          'product_id': productId,
+          'product_name': item['nama'],
+          'quantity': qty,
+          'price': harga,
+          'total_price': harga * qty,
           'image_url': item['image_url'] ?? item['gambar'],
         });
 
-        // 2. Kurangi stok produk
-        await dio.put(
-          '$baseUrl/products/$productId/reduce-stock',
-          data: {'quantity': qty},
-        );
+        await dio.put('$baseUrl/products/$productId/reduce-stock', data: {'quantity': qty});
       }
 
-      Navigator.pop(context); // Tutup loading dialog
+      Navigator.pop(context); // Tutup loading
+      if (_selectedIndex == 0) Navigator.pop(context); // Tutup Bottom Sheet keranjang jika terbuka
+      
       setState(() => cartItems.clear());
-      await _fetchTransactionHistory();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ Transaksi Berhasil! Stok telah diperbarui.'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      _fetchTransactionHistory();
+      _showSnackBar('✅ Transaksi Berhasil!', Colors.green);
     } catch (e) {
-      Navigator.pop(context); // Tutup loading dialog
-      print('❌ Checkout error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ Gagal Checkout: Server Error (500)'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      Navigator.pop(context);
+      _showSnackBar('❌ Gagal Checkout', Colors.red);
     }
   }
 
-  void _removeFromCart(int index) {
-    setState(() => cartItems.removeAt(index));
+  void _showSnackBar(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: color, duration: const Duration(seconds: 1)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Staff Dashboard', style: TextStyle(fontWeight: FontWeight.bold)),
-        leading: IconButton(
-          icon: const Icon(Icons.logout, color: Colors.red),
-          onPressed: () => Navigator.pushReplacement(
-              context, MaterialPageRoute(builder: (_) => const LoginScreen())),
-        ),
-        actions: const [ThemeToggleButton()],
+        actions: [
+          const ThemeToggleButton(),
+          IconButton(
+            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+            onPressed: () => Navigator.pushReplacement(
+                context, MaterialPageRoute(builder: (_) => const LoginScreen())),
+          ),
+        ],
       ),
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _buildPenjualanTab(isDark, theme),
-          _buildRiwayatTab(isDark, theme),
+          _buildPenjualanTab(isDark),
+          _buildRiwayatTab(isDark),
         ],
       ),
+      // Tombol Keranjang Melayang khusus untuk HP
+      floatingActionButton: _selectedIndex == 0 && cartItems.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: () => _showCartSheet(context),
+              backgroundColor: const Color(0xFF00BCD4),
+              icon: const Icon(Icons.shopping_cart_checkout, color: Colors.white),
+              label: Text('${cartItems.length} Produk', style: const TextStyle(color: Colors.white)),
+            )
+          : null,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
-        selectedItemColor: const Color(0xFF00BCD4),
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.shopping_cart), label: 'Penjualan'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Riwayat'),
+          BottomNavigationBarItem(icon: Icon(Icons.storefront_rounded), label: 'Toko'),
+          BottomNavigationBarItem(icon: Icon(Icons.history_rounded), label: 'Riwayat'),
         ],
       ),
     );
   }
 
-  Widget _buildPenjualanTab(bool isDark, ThemeData theme) {
-    return Row(
+  // TAB PENJUALAN
+  Widget _buildPenjualanTab(bool isDark) {
+    return Column(
       children: [
-        Expanded(
-          flex: 2,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: TextField(
-                  onChanged: (value) => setState(() => searchQuery = value),
-                  decoration: InputDecoration(
-                    hintText: 'Cari produk...',
-                    prefixIcon: const Icon(Icons.search),
-                    filled: true,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: HomeScreen(
-                  role: 'staff',
-                  onAddToCart: _addToCart,
-                  searchQuery: searchQuery,
-                ),
-              ),
-            ],
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: SearchBar(
+            hintText: 'Cari buah segar...',
+            onChanged: (value) => setState(() => searchQuery = value),
+            leading: const Icon(Icons.search),
+            padding: const MaterialStatePropertyAll(EdgeInsets.symmetric(horizontal: 16)),
+            elevation: const MaterialStatePropertyAll(1),
           ),
         ),
-        // Sisi Kanan: Keranjang (Perbaikan Overflow)
         Expanded(
-          flex: 1,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border(left: BorderSide(color: theme.dividerColor)),
-              color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-            ),
-            child: Column(
-              children: [
-                _buildCartHeader(),
-                Expanded(
-                  child: cartItems.isEmpty
-                      ? const Center(child: Icon(Icons.shopping_basket_outlined, size: 40, color: Colors.grey))
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(8),
-                          itemCount: cartItems.length,
-                          itemBuilder: (context, index) => _buildCartItem(index, isDark),
-                        ),
-                ),
-                _buildCartFooter(theme),
-              ],
-            ),
+          child: HomeScreen(
+            role: 'staff',
+            onAddToCart: _addToCart,
+            searchQuery: searchQuery,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildCartHeader() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFF00BCD4), Color(0xFFE91E63)]),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text('Keranjang', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          CircleAvatar(
-            radius: 10,
-            backgroundColor: Colors.white,
-            child: Text('${cartItems.length}', style: const TextStyle(fontSize: 10, color: Color(0xFFE91E63))),
-          )
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCartItem(int index, bool isDark) {
-    final item = cartItems[index];
-    return Card(
-      color: isDark ? Colors.grey[850] : Colors.grey[100],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4.0),
-        child: ListTile(
-          dense: true,
-          // Menggunakan Expanded/Flexible di dalam Row ListTile untuk mencegah overflow
-          title: Text(
-            item['nama'] ?? '',
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-          ),
-          subtitle: Text(
-            'x${item['quantity']} - Rp ${(item['harga'] ?? 0) * (item['quantity'] ?? 1)}',
-            style: const TextStyle(fontSize: 11),
-          ),
-          trailing: IconButton(
-            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
-            onPressed: () => _removeFromCart(index),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCartFooter(ThemeData theme) {
-    int total = cartItems.fold<int>(0, (sum, item) => sum + (((item['harga'] ?? 0) as int) * ((item['quantity'] ?? 1) as int)));
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(border: Border(top: BorderSide(color: theme.dividerColor))),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Total'),
-              Text('Rp $total', style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF00BCD4))),
-            ],
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: cartItems.isEmpty ? null : _checkout,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00BCD4),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              child: const Text('BAYAR', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+  // MODAL KERANJANG UNTUK HP (Bottom Sheet)
+  void _showCartSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setModalState) {
+          int total = cartItems.fold<int>(0, (sum, item) => sum + ((item['harga'] as int) * (item['quantity'] as int)));
+          
+          return Container(
+            padding: const EdgeInsets.all(20),
+            height: MediaQuery.of(context).size.height * 0.7,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Pesanan Saat Ini', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const Divider(),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: cartItems.length,
+                    itemBuilder: (context, index) {
+                      final item = cartItems[index];
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(item['nama'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('${item['quantity']} x Rp ${item['harga']}'),
+                        trailing: Text('Rp ${item['harga'] * item['quantity']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        leading: IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+                          onPressed: () {
+                            setState(() => cartItems.removeAt(index));
+                            setModalState(() {});
+                            if (cartItems.isEmpty) Navigator.pop(context);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const Divider(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Total Pembayaran', style: TextStyle(fontSize: 16)),
+                      Text('Rp $total', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF00BCD4))),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _checkout,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF00BCD4),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text('PROSES BAYAR', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                )
+              ],
             ),
-          ),
-        ],
-      ),
+          );
+        });
+      },
     );
   }
 
-  Widget _buildRiwayatTab(bool isDark, ThemeData theme) {
+  // TAB RIWAYAT
+  Widget _buildRiwayatTab(bool isDark) {
     return RefreshIndicator(
       onRefresh: _fetchTransactionHistory,
       child: transactionHistory.isEmpty
@@ -312,10 +250,24 @@ String get storageUrl => 'https://vercel-fix-self.vercel.app/uploads';
               itemBuilder: (context, index) {
                 final trx = transactionHistory[index];
                 return Card(
+                  elevation: 0.5,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.withOpacity(0.2))),
                   child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: Colors.cyan.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                      child: const Icon(Icons.receipt_long_rounded, color: Colors.cyan),
+                    ),
                     title: Text(trx['product_name'] ?? 'Produk', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('Qty: ${trx['quantity']} | ${trx['tanggal']?.toString().split('T')[0] ?? ''}'),
-                    trailing: Text('Rp ${trx['total_price']}', style: const TextStyle(color: Colors.pink, fontWeight: FontWeight.bold)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Jumlah: ${trx['quantity']} pcs'),
+                        Text(trx['tanggal']?.toString().split('T')[0] ?? '', style: const TextStyle(fontSize: 11)),
+                      ],
+                    ),
+                    trailing: Text('Rp ${trx['total_price']}', style: const TextStyle(color: Colors.pink, fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                 );
               },

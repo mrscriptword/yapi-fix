@@ -1,37 +1,45 @@
-name: Android CI/CD Build APK
+name: Build APK Release
 
 on:
   push:
-    branches: [ "main" ] # Berjalan otomatis saat push ke branch main
+    branches: [ "main" ] # Akan otomatis build setiap kali Anda push ke branch main
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    
+    # --- TAMBAHAN INI UNTUK MENGATASI ERROR ROOT PROJECT ---
+    defaults:
+      run:
+        working-directory: ./retail_buah_app 
+
     steps:
-      - uses: actions/checkout@v3
-      
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
       - name: Set up Java
         uses: actions/setup-java@v3
         with:
           distribution: 'zulu'
           java-version: '17'
-          
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.38.5' # Sesuaikan versi flutter Anda
-          
+          channel: 'stable'
+
       - name: Install dependencies
         run: flutter pub get
 
       - name: Clean Build Cache
-        run: flutter clean # Perintah wajib pembersihan
+        run: flutter clean
 
-      - name: Build APK
+      - name: Build APK Release
         run: flutter build apk --release
 
-      - name: Upload APK as Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload APK Result
+        uses: actions/upload-artifact@v3
         with:
           name: app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          # Sesuaikan path-nya juga dengan folder proyek Anda
+          path: retail_buah_app/build/app/outputs/flutter-apk/app-release.apk

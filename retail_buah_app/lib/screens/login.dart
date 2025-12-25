@@ -19,7 +19,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
 
   // Gunakan localhost jika di Web/Simulator, gunakan 10.0.2.2 jika di Emulator Android
-  String get baseUrl => 'http://localhost:3000/api'; 
+  String get baseUrl => 'https://vercel-fix-self.vercel.app/api'; 
 
   Future<void> _handleLogin() async {
     if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {

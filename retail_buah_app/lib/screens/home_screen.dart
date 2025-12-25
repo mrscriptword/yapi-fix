@@ -190,7 +190,7 @@ String get storageUrl => 'https://retail-buah-v2-7mu3ahd3h-anantapramudyaalfarit
         elevation: 0,
         centerTitle: true,
         title: Text(
-          'Retail Buah',
+          ' ',
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: isDark ? Colors.white : Colors.black87,
@@ -204,7 +204,6 @@ String get storageUrl => 'https://retail-buah-v2-7mu3ahd3h-anantapramudyaalfarit
               _fetchProducts();
             },
           ),
-          const ThemeToggleButton(),
         ],
       ),
       body: _isLoading
